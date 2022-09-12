@@ -1,0 +1,158 @@
+---
+title: "DATA 608 - Assignment 1"
+author: "Shana Green"
+date: "Due 09/11/2022"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+**Principles of Data Visualization and Introduction to ggplot2**
+
+I have provided you with data about the 5,000 fastest growing companies in the US, as compiled by Inc. magazine. lets read this in:
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+```
+
+```{r}
+inc <- read.csv("https://raw.githubusercontent.com/charleyferrari/CUNY_DATA_608/master/module1/Data/inc5000_data.csv", header= TRUE)
+```
+
+And lets preview this data:
+
+```{r}
+head(inc)
+```
+
+```{r}
+summary(inc)
+```
+
+Think a bit on what these summaries mean. Use the space below to add some more relevant non-visual exploratory information you think helps you understand this data:
+
+Answer: Upon reviewing the summary data, I easily noticed the mean and median are the same for Rank column. This may indicate a perfect symmetrical distribution. The generated revenue by a company ranges from two million to 10.1 billion. I also noticed in the Employee column, there are missing values, as this may affect or skew our visualization. 
+
+
+```{r}
+# String overview
+
+str(inc)
+
+```
+
+```{r}
+# Checking for missing values
+
+colSums(is.na(inc))
+
+```
+
+This confirms there are twelve missing values in the Employee column.
+
+```{r}
+# Locating position of NA values
+
+print ("NA values in Employee column")
+which(is.na(inc$Employees), arr.ind=TRUE)
+```
+
+```{r}
+# Which industry has the most cases?
+
+industry_count <- inc %>% count(Industry) 
+arrange(industry_count,desc(n)) %>% head(10)
+```
+
+```{r}
+# Confirming no overlap of industry names
+
+unique(unlist(inc$Industry))
+```
+
+```{r}
+# Confirm number of state codes
+
+unlist(unique(inc$State))
+```
+
+
+## Question 1
+
+Create a graph that shows the distribution of companies in the dataset by State (ie how many are in each state). There are a lot of States, so consider which axis you should use. This visualization is ultimately going to be consumed on a 'portrait' oriented screen (ie taller than wide), which should further guide your layout choices.
+
+Answer: Axis tick marks and coordinate flip will help align the states with the number of companies.
+
+
+```{r}
+
+count_by_state <- inc %>% 
+    group_by(State) %>% 
+    tally() %>%
+  rename(count = n) %>%
+  arrange(desc(count))
+
+ggplot(count_by_state, aes(x=reorder(State,count),count))+ 
+  geom_bar(stat="identity", fill="Blue")+
+  geom_text(aes(label=round(count, digits=2)), vjust=0.2, size=2, position=position_dodge(width = 1), hjust=1)+
+  theme_bw()+
+  theme(axis.text.x=element_text(size=6, vjust=0.5))+
+  theme(axis.text.y=element_text(size=6, vjust=0.5))+
+  labs( x="State", y="Number of Companies")+
+  coord_flip()+
+  ggtitle("Companies by State")
+
+```
+
+I utilized geom_text() to provide the physical number of each company by state. Doing this made it easier on the eyes as well. California (CA), Texas (TX), and New York (NY) has the most distribution of companies.
+
+## Question 2
+
+Lets dig in on the state with the 3rd most companies in the data set. Imagine you work for the state and are interested in how many people are employed by companies in different industries. Create a plot that shows the average and/or median employment by industry for companies in this state (only use cases with full data, use R's `complete.cases()` function.) In addition to this, your graph should show how variable the ranges are, and you should deal with outliers.
+
+Answer: According to the graph above, New York (NY) has the most companies in the data set. 
+
+```{r}
+# Selecting the third state with the most company
+third_state <- count_by_state[3,"State"]
+third_state
+```
+
+Answer: According to the graph above, New York (NY) has the most companies in the data set.
+
+```{r}
+ny_df <- inc[complete.cases(inc),] %>%
+  inner_join(third_state, by = "State")
+
+ny_mean <- aggregate(Employees ~ Industry, ny_df, mean)
+
+ny_max <- max(ny_mean$Employees)
+
+ggplot(ny_df, aes(x = reorder(Industry,Employees,mean), y = Employees))+
+    geom_boxplot(outlier.shape = NA, show.legend=F, fill = "Green") + coord_flip()+
+    labs(x = "Industry", y = "Employees", title="Mean Employee Size by Industry")+
+    theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+
+    scale_y_continuous(limits = c(0,ny_max), breaks = seq(0, ny_max, 200))
+
+```
+
+## Question 3
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart that makes this information clear. Once again, the distribution per industry should be shown.
+
+```{r}
+
+rev <- inc %>%
+  filter(State== "NY") %>% 
+  group_by(Industry) %>% 
+  summarise(avg_rev = mean(Revenue))
+
+
+ggplot(rev, aes(x=reorder(Industry, avg_rev), y=avg_rev))+
+    geom_bar(stat="identity", fill="Red")+
+
+    coord_flip()+
+    labs(title="Average Revenue per Employee by industry in NY", x="Industry", y="Average Revenue per Employee")+
+    scale_y_continuous(labels = scales::comma)
+
+```
