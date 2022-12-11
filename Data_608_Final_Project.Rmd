@@ -1,0 +1,298 @@
+---
+title: "DATA 608 Final Project"
+author: "Joe Foy, Shana Green,Shane Hylton"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+  prettydoc::html_pretty:
+    theme: HPSTR
+    highlight: github
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+subtitle: Analyzing IRS Migration Data
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this project, our group analyzed data pulled from the IRS Migration Data, which is an extensive repository of data that is open to the public. Our primary goal for this project was to develop two apps, a Dash App and a Shiny App. This .pdf is a companion to the Shiny App we built. In this paper and in the Shiny App, we provide visualizations that help tell the story of state to state migration between the years of 2019 and 2020. The Shiny App allows users to select a state and it provides visualizations for the user to review. As a future step in the Shiny App, we would like to add a second tab that shows the raw numbers that contribute to changing the color of the choropleth maps. 
+
+[Shiny App: 2019-2020 Interstate Migration](https://st3vejobs.shinyapps.io/shiny_final_project_migration/)
+
+[Data Source: IRS Migration Data](https://www.irs.gov/statistics/soi-tax-stats-migration-data-2019-2020)
+
+# Dataset Exploration
+
+In this analysis, we are using the following packages: *tidyverse*, *shiny*, *maps*, *mapproj*,*kableExtra*, and *viridis*. Some of the data was tidied in Excel, and the rest of the tidying work was completed in R. One of the states (TX) was not properly encoded, and that was fixed when the data was loaded. We also multiplied the AGI totals from the two years by 1000 so that we could better represent the per-person AGI inflows and outflows. In the raw dataset, the AGI is given in x$1000, so we are simply using the actual values. 
+
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+
+library(tidyverse)
+library(shiny)
+library(maps)
+library(mapproj)
+library(viridis)
+library(kableExtra)
+
+```
+
+
+```{r,echo=FALSE}
+
+mig <- read.csv("1920inmigall.csv")
+state_outflow <- read.csv("stateoutflow1920.csv")
+state_outflow$state_abb[state_outflow$y1_statefips == 48] <- "TX"
+state_outflow$state_name[state_outflow$y1_statefips == 48] <- "Texas"
+```
+
+```{r,echo=FALSE}
+
+mig$Total_AGI_Y1 <- mig$total_y1_agi_0 * 1000
+mig$Total_AGI_Y2 <- mig$total_y2_agi_0 * 1000
+
+state_outflow$AGI <- state_outflow$AGI * 1000
+
+mig <- mig %>%
+  relocate(Total_AGI_Y1, .after = total_n2_0) %>%
+  relocate(Total_AGI_Y2, .after = Total_AGI_Y1)
+
+mig$Total_AGI_19_20 <- row.names(mig)
+mig$Total_AGI_19_20_pct_Change <- ((mig$Total_AGI_Y2 - mig$Total_AGI_Y1) / mig$Total_AGI_Y1) * 100
+
+all_agi_classes <- subset(mig, agi_stub == 0)
+row.names(all_agi_classes) <- seq(1,nrow(all_agi_classes))
+
+all_agi_classes <- all_agi_classes[,c('state_name','state','total_n1_0','total_n2_0','Total_AGI_Y1','Total_AGI_Y2','Total_AGI_19_20_pct_Change')]
+
+```
+
+
+# Visualization
+
+```{r,echo=FALSE}
+
+all_agi_classes$text <- paste(all_agi_classes$state_name)
+
+```
+
+
+Below, we show the total number of tax returns filed in 2020 in each state. This does not include those who are claimed on the tax return as dependent.
+
+```{r,echo=FALSE}
+
+ggplot(all_agi_classes,aes(x = factor(state),y = total_n1_0,fill = state_name))+
+  geom_col(show.legend = FALSE)+
+  ylab('Total Returns Filed')+
+  xlab('State')+
+  ggtitle("Total Returns Filed in 2020 (nonmigrants, inflows, same state)")+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))+
+  theme(plot.title = element_text(hjust = 0.5),axis.text.x = element_text(size = 7))
+
+
+```
+
+
+
+```{r,echo=FALSE,include=FALSE}
+## Test GGplot Map of USA
+
+state <- map_data("state")
+
+ggplot(data=state, aes(x=long, y=lat, fill=region, group=group)) + 
+  geom_polygon(color = "white") + 
+  guides(fill=FALSE) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), axis.text.y=element_blank(), axis.ticks.y=element_blank()) + 
+  ggtitle('U.S. Map with States') + 
+  coord_fixed(1.3)
+
+```
+
+## Figure of AGI Inflow From 2019 to 2020
+
+The below figure shows the net AGI percentage change for each state from 2019 to 2020. Below the figure, we have included the data for the net AGI percentage change for reference. 
+
+```{r,echo=FALSE}
+
+# Change state names to match map data.
+
+all_agi_classes$state_name <- tolower(all_agi_classes$state_name)
+
+# Merge Data with Map Data
+
+all_agi_classes$region <- tolower(all_agi_classes$state_name)
+
+#Merge function is a life-changing function.
+
+choro <- merge(state,all_agi_classes, sort = FALSE, by = "region")
+choro <- choro[order(choro$order), ]
+# Test plot of AGI % Change By State
+
+ggplot(choro, aes(x=long, y=lat))+ 
+  geom_polygon(aes(group = group,fill=Total_AGI_19_20_pct_Change))+
+  coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+  ggtitle("US AGI Percentage Change By State: 2019 to 2020")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+all_agi_classes_kbl <- all_agi_classes
+
+all_agi_classes_kbl <- all_agi_classes_kbl %>%
+  rename("State Name" = text) %>%
+  rename(Net_AGI_Percent_Change = Total_AGI_19_20_pct_Change)
+
+kbl(all_agi_classes_kbl[, c(8,7)], longtable = T, booktabs = T, caption = "Net AGI Percent Change 2019-2020") %>%
+  kable_styling(latex_options = c("repeat_header"))
+
+```
+
+# Emigration by State
+
+The below figure shows the log (base 2) count of individuals who left NY in 2019-2020, as well as where they went. On this scale, lighter shades indicate a higher population. This is the foundation for the Shiny App. The App is much more appealing than the below image, but it is useful to see where the process started. All three of the below plots are samples of where the maps for the Shiny App started, and the figures have been updated in the Shiny App to be more easy to interpret. This is where the *viridis* package is very useful. We were able to use it to create visualizations with an easy to follow spectrum.
+
+
+```{r,echo=FALSE}
+
+state_outflow$n2_log_base2 <- sign(state_outflow$n2) * log(abs(state_outflow$n2),2)
+
+
+#str(state_outflow)
+#state_outflow$y2_statefips <- str(state_outflow$y2_statefips)
+
+state_outflow_only <- state_outflow[which(state_outflow$y2_statefips <= 56),]
+
+state_outflow_only$y2_state_name[state_outflow_only$state_abb == state_outflow_only$y2_state] <- state_outflow_only$state_name[state_outflow_only$state_abb == state_outflow_only$y2_state]
+
+state_outflow_only$AGI_per_person <- state_outflow_only$AGI / state_outflow_only$n2
+
+state_outflow_only$log10AGI <- sign(state_outflow_only$AGI) * log(abs(state_outflow_only$AGI),10)
+
+state_outflow_only$state_name <- tolower(state_outflow_only$state_name)
+
+state_outflow_only$y2_state_name <- tolower(state_outflow_only$y2_state_name)
+
+state_outflow_only$region <- tolower(state_outflow_only$y2_state_name)
+
+state_outflow_only$AGI_per_person <- state_outflow_only$AGI / state_outflow_only$n2
+
+state_outflow_only$log_base_e_AGI_per_person <- sign(state_outflow_only$AGI_per_person) * log(abs(state_outflow_only$AGI_per_person))
+
+write.table(state_outflow_only,"state_outflow_only.csv",row.names = FALSE, col.names = TRUE, quote = FALSE, sep = ",")
+
+```
+
+```{r,echo=FALSE}
+# Pick a State
+selection <- "NY"
+chosen_state_outflow <- state_outflow_only[which(state_outflow_only$state_abb == selection),]
+
+# Merge Data with Map Data
+
+#Merge function is a life-changing function.
+
+choro_state <- merge(state,chosen_state_outflow, sort = FALSE, by = "region")
+choro_state <- choro_state[order(choro_state$order), ]
+# Test plot of AGI % Change By State
+
+ggplot(choro_state, aes(x=long, y=lat))+ 
+  geom_polygon(aes(group = group,fill=n2_log_base2))+
+  coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+  ggtitle(paste("Emigration from ", selection,": 2019 to 2020 (Base 2 log of Count of Individuals)",sep = ""))+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+```{r,echo=FALSE}
+# Pick a State
+selection <- "NY"
+chosen_state_outflow <- state_outflow_only[which(state_outflow_only$state_abb == selection),]
+
+#Prepare State Name for Map
+chosen_state_outflow$state_name <- tolower(chosen_state_outflow$state_name)
+
+chosen_state_outflow$y2_state_name <- tolower(chosen_state_outflow$y2_state_name)
+
+# Merge Data with Map Data
+
+chosen_state_outflow$region <- tolower(chosen_state_outflow$y2_state_name)
+
+#Merge function is a life-changing function.
+
+choro_state <- merge(state,chosen_state_outflow, sort = FALSE, by = "region")
+choro_state <- choro_state[order(choro_state$order), ]
+# Test plot of AGI % Change By State
+
+
+
+ggplot(choro_state, aes(x=long, y=lat))+ 
+  geom_polygon(aes(group = group,fill=log_base_e_AGI_per_person))+
+  coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+  ggtitle(paste("Financial Emigration from ", selection,": 2019 to 2020 (AGI Per Person Outflow)",sep = ""))+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position = "bottom")+
+  scale_fill_viridis(option = "mako",direction = -1, name = "AGI Per Person",
+                     guide = guide_colorbar(
+                       direction = "horizontal",
+                       barheight = unit(2, units = "mm"),
+                       barwidth = unit(50, units = "mm"),
+                       draw.ulim = F,
+                       title.position = 'top',
+                       title.hjust = 0.5,
+                       label.hjust = 0.5
+                     ))
+
+```
+
+
+```{r,echo=FALSE,include=FALSE}
+
+## Test Choropleth Legend
+ggplot(choro_state, aes(x=long, y=lat,group=group,fill=AGI_per_person))+ 
+  geom_polygon(aes(group = group,fill=AGI_per_person))+
+  #theme_void()+
+  scale_fill_viridis(trans = "log", breaks=c(1,5,10,20,50,100), name="AGI Per Person",guide = guide_legend(direction = "horizontal",nrow = 1,label.position = "bottom"))+
+  coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+  ggtitle(paste("Financial Emigration from ", selection,": 2019 to 2020 (AGI Per Person Outflow)",sep = ""))+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="bottom")
+
+
+```
+
+```{r,echo=FALSE}
+# Pick a State
+selection <- "NY"
+chosen_state_outflow <- state_outflow_only[which(state_outflow_only$state_abb == selection),]
+
+#Prepare State Name for Map
+chosen_state_outflow$state_name <- tolower(chosen_state_outflow$state_name)
+
+chosen_state_outflow$y2_state_name <- tolower(chosen_state_outflow$y2_state_name)
+
+# Merge Data with Map Data
+
+chosen_state_outflow$region <- tolower(chosen_state_outflow$y2_state_name)
+
+#Merge function is a life-changing function.
+
+choro_state <- merge(state,chosen_state_outflow, sort = FALSE, by = "region")
+choro_state <- choro_state[order(choro_state$order), ]
+# Test plot of AGI % Change By State
+
+ggplot(choro_state, aes(x=long, y=lat))+ 
+  geom_polygon(aes(group = group,fill=log10AGI))+
+  coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+  ggtitle(paste("Financial Emigration from ", selection,": 2019 to 2020 (Log Base 10 of AGI)",sep = ""))+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```

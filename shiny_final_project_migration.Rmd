@@ -1,0 +1,143 @@
+---
+title: "Analyzing IRS Migration Data"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r sf-app,echo=FALSE,warning = FALSE,message=FALSE}
+
+library(shiny)
+library(bslib)
+#getwd()
+state_outflow_only <- read.csv("state_outflow_only.csv")
+state_abb_choices <- data.frame(unique(state_outflow_only$state_abb))
+colnames(state_abb_choices) = c("State")
+
+shinyApp(
+  ui = fluidPage(
+    #theme = bs_theme(version = 4, bootswatch = "lumen"),
+    titlePanel("State to State Migration 2019-2020"),
+    sidebarLayout(
+      sidebarPanel(
+        selectizeInput('y', 'State', choices = state_abb_choices)),
+      mainPanel = tabsetPanel(type = 'tabs', tabPanel("Plot", plotOutput('plot',width = 940,height = 650)))
+    )
+  ),
+  server = function(input, output,session) {
+    library(ggpubr)
+    library(ggplot2)
+    library(shiny)
+    library(maps)
+    library(mapproj)
+    library(viridis)
+    
+    state <- map_data("state")
+
+    state_outflow_only <- read.csv("state_outflow_only.csv")
+    state_abb_choices <- data.frame(unique(state_outflow_only$state_abb))
+    colnames(state_abb_choices) = c("State")
+    
+    updateSelectizeInput(session, 'y', choices = state_abb_choices$State, server = TRUE)
+ 
+    output$plot <- renderPlot({
+      
+         chosen_state_outflow <- state_outflow_only[which(state_outflow_only$state_abb == input$y),]
+         choro_state <- merge(state,chosen_state_outflow, sort = FALSE, by = "region")
+         choro_state <- choro_state[order(choro_state$order), ]
+
+
+         emi_pop <- ggplot(choro_state, aes(x=long, y=lat))+
+           geom_polygon(aes(group = group,fill=n2_log_base2))+
+           coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+           ggtitle(paste("Emigration from ", input$y,": 2019 to 2020 (Base 2 log of Count of Individuals)",sep = ""))+
+           theme(plot.title = element_text(hjust = 0.5))+
+           theme(legend.position = "bottom")+
+           scale_fill_viridis(option = "magma",direction = -1, name = "Base 2 Log Count of Individuals",
+                              guide = guide_colorbar(
+                                direction = "horizontal",
+                                barheight = unit(2, units = "mm"),
+                                barwidth = unit(50, units = "mm"),
+                                draw.ulim = F,
+                                title.position = 'top',
+                                title.hjust = 0.5,
+                                label.hjust = 0.5
+                     ))
+      
+         chosen_state_inflow <- state_outflow_only[which(state_outflow_only$y2_state == input$y),]
+         chosen_state_inflow$region <- chosen_state_inflow$state_name
+         choro_state_in <- merge(state,chosen_state_inflow, sort = FALSE, by = "region")
+         choro_state_in <- choro_state_in[order(choro_state_in$order), ]
+         
+         
+         immi_pop <- ggplot(choro_state_in, aes(x=long, y=lat))+
+           geom_polygon(aes(group = group,fill=n2_log_base2))+
+           coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+           ggtitle(paste("Immigration to ", input$y,": 2019 to 2020 (Base 2 log of Count of Individuals)",sep = ""))+
+           theme(plot.title = element_text(hjust = 0.5))+
+           theme(legend.position = "bottom")+
+           scale_fill_viridis(option = "magma",direction = -1, name = "Base 2 Log Count of Individuals",
+                              guide = guide_colorbar(
+                                direction = "horizontal",
+                                barheight = unit(2, units = "mm"),
+                                barwidth = unit(50, units = "mm"),
+                                draw.ulim = F,
+                                title.position = 'top',
+                                title.hjust = 0.5,
+                                label.hjust = 0.5
+                     ))
+         
+      
+         emi_money <- ggplot(choro_state, aes(x=long, y=lat))+ 
+           geom_polygon(aes(group = group,fill=log10AGI))+
+           coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+           ggtitle(paste("Total Financial Emigration from ", input$y,": 2019 to 2020 (Log Base 10 of AGI)",sep = ""))+
+           theme(plot.title = element_text(hjust = 0.5))+
+           theme(legend.position = "bottom")+
+           scale_fill_viridis(option = "mako",direction = -1, name = "Log Base 10 of AGI",
+                              guide = guide_colorbar(
+                                direction = "horizontal",
+                                barheight = unit(2, units = "mm"),
+                                barwidth = unit(50, units = "mm"),
+                                draw.ulim = F,
+                                title.position = 'top',
+                                title.hjust = 0.5,
+                                label.hjust = 0.5
+                     ))
+
+         
+      
+         emi_money_per_person <- ggplot(choro_state, aes(x=long, y=lat))+ 
+           geom_polygon(aes(group = group,fill=log_base_e_AGI_per_person))+
+           coord_map("albers",lat0 = 45.5,lat1 = 29.5)+
+           ggtitle(paste("Financial Emigration from ", input$y,": 2019 to 2020 (log_e AGI Per Person Out)",sep = ""))+
+           theme(plot.title = element_text(hjust = 0.5))+
+           theme(legend.position = "bottom")+
+           scale_fill_viridis(option = "mako",direction = -1, name = "Natural Log AGI Per Person",
+                              guide = guide_colorbar(
+                                direction = "horizontal",
+                                barheight = unit(2, units = "mm"),
+                                barwidth = unit(50, units = "mm"),
+                                draw.ulim = F,
+                                title.position = 'top',
+                                title.hjust = 0.5,
+                                label.hjust = 0.5
+                     ))
+         
+         ggarrange(emi_pop,immi_pop,emi_money_per_person,emi_money,nrow = 2, ncol = 2)
+         # For 1 on top, 2 bottom: ggarrange(emi_pop,ggarrange(emi_money_per_person,emi_money,ncol = 2),nrow = 2)
+         #emi_pop
+         #emi_money
+         #emi_money_per_person
+         
+    },
+    width = "auto",height = "auto")
+  },
+  options = list(height = 1080,width = 1080)
+)
+
+
+```
